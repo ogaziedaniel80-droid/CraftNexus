@@ -16,6 +16,201 @@ pub mod resource_model;
 /// | 40–42   | Validation  | Input validation failures                       | Fix caller input          |
 ///
 /// Use [`is_retryable`] to determine whether an error may succeed on retry.
+#[contracterror(export = false)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(any(test, feature = "testutils"), derive(Debug))]
+#[repr(u32)]
+pub enum Error {
+    // ── Auth / Access (1–9): rollback immediately ──
+    /// The caller is not authorized for this operation. Ensure you are using
+    /// the correct admin, arbitrator, moderator, buyer, or seller address.
+    Unauthorized = 1,
+    EscrowNotFound = 2,
+    InvalidEscrowState = 3,
+    UsernameAlreadyExists = 4,
+    TokenNotWhitelisted = 5,
+    AmountBelowMinimum = 6,
+    ReleaseWindowTooLong = 7,
+    NotInDispute = 8,
+    AlreadyOnboarded = 9,
+    // ── State / Transition (10–19): retry after state change ──
+    /// The fee exceeds the maximum allowed platform fee (MAX_PLATFORM_FEE_BPS,
+    /// currently 10%). Reduce fee_bps and retry.
+    InvalidFee = 10,
+    SameBuyerSeller = 11,
+    PlatformNotInitialized = 12,
+    ReleaseWindowNotElapsed = 13,
+    BatchOperationFailed = 14,
+    ContractPaused = 15,
+    DisputeExpired = 16,
+    InsufficientStake = 17,
+    StakeCooldownActive = 18,
+    InvalidRefundAmount = 19,
+    // ── Config / Resource (20–29): operator must act ──
+    /// Partial refund proposal not found
+    ProposalNotFound = 20,
+    ProposalAlreadyExists = 21,
+    ReentryDetected = 22,
+    ReleaseWindowTooShort = 23,
+    StakeTokenMismatch = 24,
+    InvalidAdminAddress = 25,
+    CorruptedPlatformConfig = 26,
+    StakeQueueFull = 27,
+    AdminRecoveryFailed = 28,
+    BatchLimitExceeded = 29,
+    // ── Operational / Gates (30–39): retry after cooldown ──
+    /// Deprecated function called (no-op for ABI compatibility)
+    DeprecatedFunction = 30,
+    NoPendingAdmin = 31,
+    NoUpgradeProposed = 32,
+    UpgradeCooldownActive = 33,
+    UpgradeProposalExists = 34,
+    InvalidUpgradeHash = 35,
+    RecurringEscrowNotFound = 36,
+    CycleNotReady = 37,
+    RecurringEscrowIdExhausted = 38,
+    OnboardingContractNotSet = 39,
+    // ── Validation (40+): fix caller input ──
+    /// The configured onboarding contract rejected the participant state proof
+    OnboardingAuthorizationFailed = 87,
+    /// Provided metadata hash is invalid
+    InvalidMetadataHash = 40,
+    InvalidIpfsHash = 41,
+    NotAnUpgradeSigner = 42,
+    AlreadyApproved = 43,
+    InvalidTokenDecimals = 44,
+    UpgradeCompatibilityMissing = 45,
+    UpgradeCompatibilityInvalid = 46,
+    UpgradeMigrationIncomplete = 47,
+    StorageLayoutMismatch = 48,
+    AdminActionTerminal = 49,
+    AdminActionNeedsApprovals = 50,
+    AdminActionTimelockActive = 51,
+    NotAnAdminActionSigner = 52,
+    EvidenceExpired = 53,
+    EvidenceAlreadyUsed = 54,
+    InvalidDisputeSession = 55,
+    /// Contract does not implement the supported token interface.
+    UnsupportedToken = 56,
+    /// The requested continuation size is outside the scheduler bound.
+    InvalidBatchWorkLimit = 57,
+    BatchJobCancelled = 58,
+    BatchJobNotFound = 59,
+    BatchJobUnauthorized = 60,
+    BatchJobCompleted = 61,
+    PaginationLimitZero = 80,
+    PaginationCursorInvalid = 81,
+    /// Platform wallet cannot be the contract address.
+    InvalidPlatformWallet = 62,
+    InvalidServiceAgreementHash = 63,
+    ChallengeWindowActive = 64,
+    ArbitratorBlacklisted = 65,
+    InvalidDisputeAction = 66,
+    EscalationWindowActive = 67,
+    ArbitratorDeadlineExceeded = 68,
+    SettlementAlreadyFinalized = 69,
+    EmergencyAccountingInvariant = 70,
+    ReconciliationRequired = 71,
+    RepairPlanNotFound = 72,
+    RepairPlanTerminal = 73,
+    RepairPlanPreconditionFailed = 74,
+    OnboardingProfileNotFound = 75,
+    OnboardingProfileInactive = 76,
+    OnboardingRoleMismatch = 77,
+    OnboardingProfileStale = 78,
+    /// The user's verification status has been revoked or is not current.
+    OnboardingVerificationRevoked = 80,
+    /// An escrow with this order ID already exists. Duplicate escrow
+    /// identifiers are rejected so a retry (or a conflicting external
+    /// reference) can never overwrite an existing escrow's state.
+    EscrowAlreadyExists = 83,
+    /// Counter addition overflowed the maximum representable integer (#1028).
+    CounterOverflow = 84,
+    /// Counter subtraction underflowed below zero (#1028).
+    CounterUnderflow = 85,
+    /// Requested WASM upgrade cooldown is below `MIN_WASM_UPGRADE_COOLDOWN`,
+    /// which would let the mandatory review window be bypassed (#1062).
+    UpgradeCooldownTooShort = 86,
+    /// A batch continuation cursor does not match the persisted job: it was
+    /// minted for a different operation type, or its revision is ahead of the
+    /// job's committed checkpoint (a fabricated / future cursor). A cursor whose
+    /// revision is *behind* the checkpoint is not an error — it is treated as a
+    /// harmless idempotent replay (#1075/#1076).
+    BatchCursorMismatch = 88,
+    /// Proposed dispute-escalation checkpoints are not strictly increasing, or
+    /// the last checkpoint is not strictly before the final dispute deadline
+    /// (`max_dispute_duration`) (#1080).
+    InvalidEscalationPolicy = 89,
+    /// An emergency operation (recovery, sweep, upgrade, pause) is already in progress;
+    /// no other emergency operation can execute concurrently (#1072).
+    EmergencyOpInProgress = 90,
+    /// An active dispute, recurring escrow, or pending upgrade exists that blocks
+    /// the requested emergency operation from starting (#1072).
+    EmergencyConflictActive = 91,
+    // ─── Liquidation / collateral health (#1111) ────────────────────────────────
+    /// The artisan's stake health is healthy; no liquidation action is permitted.
+    StakeHealthHealthy = 92,
+    /// Liquidation is not enabled in the current platform policy.
+    LiquidationDisabled = 93,
+    /// The grace period after under-collateralization has not yet elapsed.
+    LiquidationGracePeriodActive = 94,
+    /// The requested seizure amount exceeds the deficit or policy cap.
+    LiquidationSeizureExceedsCap = 95,
+    /// No liquidation record exists with the given ID.
+    LiquidationNotFound = 96,
+    /// The liquidation record is already cured; no further cure is needed.
+    LiquidationAlreadyCured = 97,
+    /// The artisan is not in a liquidation-eligible or liquidated state.
+    NotLiquidationEligible = 98,
+    /// Pending admin role transfer has expired and cannot be accepted.
+    TransferExpired = 99,
+    /// The upgrade was already executed and its state commitment is immutable.
+    /// Re-execution with the same WASM hash is not permitted (#1140).
+    UpgradeAlreadyExecuted = 100,
+    /// The caller supplied an admin revision that does not match the current
+    /// monotonic revision; the request is stale and no mutation was applied (#1071).
+    StaleAdminRevision = 101,
+    /// This admin mutation was already applied at the supplied revision.
+    /// Replaying it is a no-op failure: storage is unchanged (#1071).
+    AdminActionAlreadyApplied = 102,
+    /// Token transfer failed after state validation.
+    TokenTransferFailed = 103,
+    /// Idempotency record exists for a different operation or parameter hash.
+    IdempotencyMismatch = 104,
+    /// An oracle-driven currency conversion produced a negative amount,
+    /// price, or liquidity input (#1088).
+    ConversionNegativeInput = 105,
+    /// An oracle-driven currency conversion used a decimals value outside
+    /// the supported range (#1088).
+    ConversionUnsupportedDecimals = 106,
+    /// An oracle-driven currency conversion overflowed `i128` arithmetic
+    /// (#1088).
+    ConversionOverflow = 107,
+    /// The oracle quote's reported liquidity is below the configured
+    /// minimum; the conversion is rejected rather than settled against a
+    /// thin book (#1088).
+    ConversionInsufficientLiquidity = 108,
+    /// The oracle quote moved further from the trusted reference price than
+    /// the configured maximum movement allows (#1088).
+    ConversionExcessiveMovement = 109,
+    /// A strictly positive conversion input produced a zero output, which
+    /// would silently destroy value; rejected instead of settling for zero
+    /// (#1088).
+    ConversionOutputUnderflow = 110,
+    /// Archival policy parameters are invalid (zero retention, zero batch size,
+    /// or batch size above MAX_ARCHIVAL_COMPACTION_BATCH).
+    InvalidArchivalPolicy = 111,
+    // ─── Migration preconditions (#1118) ───────────────────────────────────────
+    /// A migration precondition was not satisfied, so the migration refused to
+    /// start. The gate is evaluated to completion *before* any mutation is
+    /// attempted, so this error always implies zero storage writes. Call
+    /// `get_migration_preconditions` to see which condition failed and why.
+    MigrationPreconditionFailed = 112,
+    /// A persisted migration precondition audit record failed its integrity
+    /// check against its own digest (#1118).
+    CorruptedMigrationAudit = 113,
+}
+
 
 /// Centralised TTL thresholds and refresh helpers.
 pub mod ttl;
@@ -46,28 +241,6 @@ mod emergency_ops_test;
 mod issue_1347_test;
 #[cfg(all(test, feature = "wasm-differential-tests"))]
 mod differential_test;
-#[cfg(test)]
-mod differential_upgrade_compatibility_test {
-impl Error for NotInitialized {
-    fn code(&Self) -> u32 {
-        ERROR_NOT_INITIALIZED
-    }
-    fn message(&Self) -> String {
-        String::from_str("max dispute duration not initialized")
-    }
-}
-
-pub struct InvalidDuration;
-
-impl Error for InvalidDuration {
-    fn code(&Self) -> u32 {
-        ERROR_INVALID_DURATION
-    }
-    fn message(&Self) -> String {
-        String::from_str("invalid max dispute duration")
-    }
-}
-
 #[must_use]
 pub fn is_retryable(error: Error) -> bool {
     matches!(
@@ -14972,6 +15145,8 @@ mod deactivated_account_tests {
     fn test_deactivation_takes_effect_immediately_no_stale_cache() {
         // Full integration test requires cross-contract mocking
     }
+
+}
 
 /// Default cooldown period after staking before tokens can be unstaked (7 days in seconds)
 const DEFAULT_STAKE_COOLDOWN: u32 = time_policy::STAKE_COOLDOWN as u32;
